@@ -95,8 +95,6 @@ jobs:
           
           # استخراج فایل payload.bin از ZIP
           echo "در حال جستجو برای فایل payload.bin ..."
-          
-          # جستجو در پوشه اصلی فایل ZIP
           payload_file=$(find . -name "payload.bin" -print -quit)
 
           # بررسی نتیجه جستجو
@@ -114,16 +112,17 @@ jobs:
           # استفاده از payload-dumper برای استخراج فایل‌ها
           git clone https://github.com/LineageOS/payload_dumper.git
           cd payload_dumper
-          python3 extract.py ../payload.bin ../extracted_files
+          pip3 install -r requirements.txt
+          python3 payload_dumper.py "../$payload_file" ../../extracted_payload
           echo "فایل‌های استخراج شده از payload.bin:"
-          ls -R ../extracted_files
-          
+          ls -R ../../extracted_payload
+
       - name: آماده‌سازی فایل‌های منبع
         run: |
           mkdir -p android_source/device/xiaomi/chopin/vendor
-          cp -r custom_rom/extracted_files/vendor/* android_source/device/xiaomi/chopin/vendor/
-          cp -r custom_rom/extracted_files/device/* android_source/device/xiaomi/chopin/
-          
+          cp -r extracted_payload/vendor/* android_source/device/xiaomi/chopin/vendor/
+          cp -r extracted_payload/device/* android_source/device/xiaomi/chopin/
+
       - name: دانلود سورس اندروید
         run: |
           cd android_source
