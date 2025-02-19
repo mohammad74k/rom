@@ -95,13 +95,13 @@ jobs:
             mv evolution_chopin-ota-tq3c.230901.001.b1-04040628-community-unsigned.zip.zip evolution_chopin-ota-tq3c.230901.001.b1-04040628-community-unsigned.zip
           fi
 
-          # استخراج فایل ZIP
-          unzip evolution_chopin-ota-tq3c.230901.001.b1-04040628-community-unsigned.zip || echo "Unzip failed"
-          echo "فایل‌های استخراج شده:"
-          ls -R
+          # بررسی وجود فایل ZIP
+          echo "محتویات دایرکتوری بعد از دانلود:"
+          ls -l
 
       - name: بررسی محتویات فایل ZIP
         run: |
+          echo "بررسی محتویات فایل ZIP"
           unzip -l evolution_chopin-ota-tq3c.230901.001.b1-04040628-community-unsigned.zip
 
       - name: استخراج payload.bin
