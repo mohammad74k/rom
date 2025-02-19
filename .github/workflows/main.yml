@@ -110,36 +110,53 @@ jobs:
           echo "فایل‌های استخراج شده:"
           ls -R
 
-      - name: استخراج payload.bin به‌صورت هوشمند
-        run: |
-          mkdir -p extracted_payload
-          cd custom_rom
-          payload_file=$(find . -name "payload.bin" -print -quit)
-          if [ -z "$payload_file" ]; then
-            echo "❌ payload.bin پیدا نشد!"
-            exit 1
-          else
-            echo "✅ payload.bin پیدا شد: $payload_file"
-          fi
-
       - name: استخراج فایل‌های vendor و device tree
         run: |
           cd custom_rom
-          git clone https://github.com/LineageOS/payload_dumper.git
-          cd payload_dumper
-          pip3 install -r requirements.txt
-          python3 payload_dumper.py "../$payload_file" ../../extracted_payload > /dev/null 2>&1
-          echo "فایل‌های استخراج شده از payload.bin:"
-          ls -R ../../extracted_payload
 
-      - name: بررسی فایل‌های استخراج‌شده از payload.bin
-        run: |
-          if [ ! -f extracted_payload/vendor.img ] || [ ! -f extracted_payload/system.img ]; then
-            echo "❌ فایل‌های ضروری (vendor.img یا system.img) استخراج نشدند!"
+          # بررسی اتصال به اینترنت
+          echo "بررسی اتصال به اینترنت..."
+          if ! ping -c 1 github.com; then
+            echo "❌ اتصال به اینترنت برقرار نشد. لطفاً شبکه را بررسی کنید."
             exit 1
-          else
-            echo "✅ فایل‌های ضروری با موفقیت استخراج شدند."
           fi
+
+          # تلاش برای کلون کردن مخزن payload_dumper
+          echo "تلاش برای کلون کردن مخزن payload_dumper..."
+          for i in {1..3}; do
+            if git clone https://github.com/LineageOS/payload_dumper.git; then
+              echo "✅ مخزن payload_dumper با موفقیت کلون شد."
+              break
+            else
+              echo "❌ تلاش $i برای کلون کردن مخزن با خطا مواجه شد. تلاش مجدد در 10 ثانیه..."
+              sleep 10
+            fi
+          done
+
+          # اگر پس از 3 تلاش موفق نشد، خطا گزارش می‌شود
+          if [ ! -d "payload_dumper" ]; then
+            echo "❌ کلون کردن مخزن payload_dumper پس از 3 تلاش ناموفق بود."
+            exit 1
+          fi
+
+          cd payload_dumper
+
+          # نصب پیش‌نیازهای payload_dumper
+          echo "نصب پیش‌نیازهای payload_dumper..."
+          if ! pip3 install -r requirements.txt; then
+            echo "❌ نصب پیش‌نیازهای payload_dumper با خطا مواجه شد."
+            exit 1
+          fi
+
+          # استخراج فایل‌ها از payload.bin
+          echo "استخراج فایل‌ها از payload.bin..."
+          if ! python3 payload_dumper.py "../$payload_file" ../../extracted_payload > /dev/null 2>&1; then
+            echo "❌ استخراج فایل‌ها از payload.bin با خطا مواجه شد."
+            exit 1
+          fi
+
+          echo "✅ فایل‌های استخراج شده از payload.bin:"
+          ls -R ../../extracted_payload
 
       - name: آماده‌سازی فایل‌های منبع
         run: |
