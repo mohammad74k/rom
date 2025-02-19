@@ -1,0 +1,138 @@
+name: Build ROM
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: تنظیم فضای Swap
+        run: |
+          set -e
+          sudo swapoff -a || true
+          sudo rm -f /swapfile || true
+          if ! swapon -s | grep -q '/swapfile'; then
+            sudo fallocate -l 8G /swapfile || sudo dd if=/dev/zero of=/swapfile bs=1M count=8192
+            sudo chmod 600 /swapfile
+            sudo mkswap /swapfile
+            sudo swapon /swapfile
+            free -h
+          fi
+
+      - name: افزودن مخزن Universe
+        run: |
+          sudo add-apt-repository -y universe
+          sudo apt update
+
+      - name: پاکسازی و بروزرسانی APT
+        run: |
+          sudo apt clean
+          sudo rm -rf /var/lib/apt/lists/*
+          for i in {1..3}; do sudo apt update && break || sleep 10; done
+          sudo apt upgrade -y || true
+
+      - name: حل مشکلات dpkg
+        run: |
+          sudo dpkg --configure -a || true
+          sudo apt install -f -y || true
+
+      - name: نصب ابزارهای اصلی
+        run: |
+          sudo DEBIAN_FRONTEND=noninteractive apt install -y --no-install-recommends \
+              openjdk-17-jdk repo git-core gnupg flex bison gperf build-essential \
+              zlib1g-dev libc6-dev libncurses5-dev x11proto-core-dev libx11-dev \
+              libgl1-mesa-dev libxml2-utils xsltproc unzip python3 python3-pip \
+              android-sdk-libsparse-utils wget ccache lz4
+
+      - name: نصب mkbootimg
+        run: |
+          if ! sudo apt install -y android-tools-mkbootimg; then
+            curl -LO https://github.com/chenxiaolong/android_device_xiaomi_msm8916-common/raw/master/tools/mkbootimg/mkbootimg
+            chmod +x mkbootimg
+            sudo mv mkbootimg /usr/local/bin/
+          fi
+
+      - name: نصب ابزارهای جانبی
+        run: |
+          sudo apt install -y f2fs-tools squashfs-tools
+
+  build:
+    runs-on: ubuntu-latest
+    needs: prepare
+    timeout-minutes: 480
+
+    steps:
+      - name: دانلود کاستوم ROM
+        run: |
+          mkdir -p custom_rom
+          cd custom_rom
+          wget -O evolution_chopin.zip "https://mirrors.ilolicon.com/ROM/evolution_chopin-ota-tq3c.230901.001.b1-04040628-community-unsigned/evolution_chopin-ota-tq3c.230901.001.b1-04040628-community-unsigned.zip"
+          unzip evolution_chopin.zip
+          echo "فایل‌های استخراج شده:"
+          ls -R
+
+      - name: استخراج payload.bin
+        run: |
+          mkdir -p extracted_payload
+          cd custom_rom
+          # استخراج payload.bin از فایل ZIP
+          payload_file=$(find . -name "payload.bin" -print -quit)
+          if [ -z "$payload_file" ]; then
+            echo "❌ payload.bin پیدا نشد!"
+            exit 1
+          fi
+          echo "✅ payload.bin پیدا شد: $payload_file"
+
+      - name: استخراج فایل‌های vendor و device tree
+        run: |
+          cd custom_rom
+          # استفاده از payload-dumper برای استخراج فایل‌ها
+          git clone https://github.com/PixelExperience/payload_dumper.git
+          cd payload_dumper
+          python3 extract.py ../payload.bin ../extracted_files
+          echo "فایل‌های استخراج شده از payload.bin:"
+          ls -R ../extracted_files
+          
+      - name: آماده‌سازی فایل‌های منبع
+        run: |
+          mkdir -p android_source/device/xiaomi/chopin/vendor
+          cp -r custom_rom/extracted_files/vendor/* android_source/device/xiaomi/chopin/vendor/
+          cp -r custom_rom/extracted_files/device/* android_source/device/xiaomi/chopin/
+          
+      - name: دانلود سورس اندروید
+        run: |
+          cd android_source
+          repo init -u https://github.com/PixelOS-AOSP/platform_manifest.git -b pixel-14.0
+          repo sync -j$(nproc)
+
+      - name: کامپایل ریکاوری
+        run: |
+          cd android_source
+          source build/envsetup.sh
+          lunch aosp_chopin-userdebug
+          make recoveryimage -j$(nproc)
+
+      - name: کامپایل ROM
+        run: |
+          cd android_source
+          make -j$(nproc)
+
+      - name: آپلود آرتیفکت
+        uses: actions/upload-artifact@v4
+        with:
+          name: Custom-ROM
+          path: |
+            android_source/out/target/product/chopin/*.zip
+            android_source/out/target/product/chopin/recovery.img
