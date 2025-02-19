@@ -110,34 +110,148 @@ jobs:
           echo "فایل‌های استخراج شده:"
           ls -R
 
-      - name: استخراج فایل‌های vendor و device tree با update_payload
+      - name: استخراج فایل‌های vendor و device tree
         run: |
           cd custom_rom
 
-          # نصب update_payload
-          echo "نصب update_payload..."
-          git clone https://github.com/anestisb/android-tools.git
-          cd android-tools
-          mkdir build
-          cd build
-          cmake ..
-          make -j$(nproc)
-          sudo make install
+          # تابع برای بررسی اتصال به اینترنت
+          check_internet() {
+            if ! ping -c 1 github.com; then
+              echo "❌ اتصال به اینترنت برقرار نشد. لطفاً شبکه را بررسی کنید."
+              exit 1
+            fi
+          }
 
-          # استخراج فایل‌ها از payload.bin
-          echo "استخراج فایل‌ها از payload.bin..."
-          payload_file=$(find .. -name "payload.bin" -print -quit)
-          if [ -z "$payload_file" ]; then
-            echo "❌ payload.bin پیدا نشد!"
-            exit 1
-          else
-            echo "✅ payload.bin پیدا شد: $payload_file"
-            mkdir -p ../../extracted_payload
-            update_payload extract "$payload_file" --output_dir ../../extracted_payload
+          # تابع برای کلون کردن مخزن
+          clone_repo() {
+            local repo_url=$1
+            local repo_name=$2
+            echo "تلاش برای کلون کردن مخزن $repo_name..."
+            for i in {1..3}; do
+              if git clone "$repo_url"; then
+                echo "✅ مخزن $repo_name با موفقیت کلون شد."
+                return 0
+              else
+                echo "❌ تلاش $i برای کلون کردن مخزن $repo_name با خطا مواجه شد. تلاش مجدد در 10 ثانیه..."
+                sleep 10
+              fi
+            done
+            echo "❌ کلون کردن مخزن $repo_name پس از 3 تلاش ناموفق بود."
+            return 1
+          }
+
+          # تابع برای استخراج با update_payload
+          extract_with_update_payload() {
+            echo "استفاده از update_payload برای استخراج..."
+            if ! command -v update_payload &> /dev/null; then
+              echo "❌ update_payload یافت نشد. در حال نصب..."
+              if ! clone_repo "https://github.com/anestisb/android-tools.git" "android-tools"; then
+                return 1
+              fi
+              cd android-tools
+              mkdir build
+              cd build
+              cmake ..
+              make -j$(nproc)
+              sudo make install
+              cd ../..
+            fi
+
+            payload_file=$(find . -name "payload.bin" -print -quit)
+            if [ -z "$payload_file" ]; then
+              echo "❌ payload.bin پیدا نشد!"
+              return 1
+            else
+              echo "✅ payload.bin پیدا شد: $payload_file"
+              mkdir -p extracted_payload
+              if update_payload extract "$payload_file" --output_dir extracted_payload; then
+                echo "✅ فایل‌ها با موفقیت با update_payload استخراج شدند."
+                return 0
+              else
+                echo "❌ استخراج با update_payload با خطا مواجه شد."
+                return 1
+              fi
+            fi
+          }
+
+          # تابع برای استخراج با payload-dumper-go
+          extract_with_payload_dumper_go() {
+            echo "استفاده از payload-dumper-go برای استخراج..."
+            if ! command -v payload-dumper-go &> /dev/null; then
+              echo "❌ payload-dumper-go یافت نشد. در حال نصب..."
+              if ! clone_repo "https://github.com/ssut/payload-dumper-go.git" "payload-dumper-go"; then
+                return 1
+              fi
+              cd payload-dumper-go
+              go build -o payload-dumper-go
+              sudo mv payload-dumper-go /usr/local/bin/
+              cd ..
+            fi
+
+            payload_file=$(find . -name "payload.bin" -print -quit)
+            if [ -z "$payload_file" ]; then
+              echo "❌ payload.bin پیدا نشد!"
+              return 1
+            else
+              echo "✅ payload.bin پیدا شد: $payload_file"
+              mkdir -p extracted_payload
+              if payload-dumper-go -o extracted_payload "$payload_file"; then
+                echo "✅ فایل‌ها با موفقیت با payload-dumper-go استخراج شدند."
+                return 0
+              else
+                echo "❌ استخراج با payload-dumper-go با خطا مواجه شد."
+                return 1
+              fi
+            fi
+          }
+
+          # تابع برای استخراج با payload-dumper
+          extract_with_payload_dumper() {
+            echo "استفاده از payload-dumper برای استخراج..."
+            if ! command -v payload-dumper &> /dev/null; then
+              echo "❌ payload-dumper یافت نشد. در حال نصب..."
+              if ! clone_repo "https://github.com/LineageOS/payload_dumper.git" "payload_dumper"; then
+                return 1
+              fi
+              cd payload_dumper
+              pip3 install -r requirements.txt
+              cd ..
+            fi
+
+            payload_file=$(find . -name "payload.bin" -print -quit)
+            if [ -z "$payload_file" ]; then
+              echo "❌ payload.bin پیدا نشد!"
+              return 1
+            else
+              echo "✅ payload.bin پیدا شد: $payload_file"
+              mkdir -p extracted_payload
+              if python3 -m payload_dumper "$payload_file" -o extracted_payload; then
+                echo "✅ فایل‌ها با موفقیت با payload-dumper استخراج شدند."
+                return 0
+              else
+                echo "❌ استخراج با payload-dumper با خطا مواجه شد."
+                return 1
+              fi
+            fi
+          }
+
+          # بررسی اتصال به اینترنت
+          check_internet
+
+          # تلاش برای استخراج با ابزارهای مختلف
+          if ! extract_with_update_payload; then
+            echo "❌ استخراج با update_payload ناموفق بود. تلاش با ابزار جایگزین..."
+            if ! extract_with_payload_dumper_go; then
+              echo "❌ استخراج با payload-dumper-go ناموفق بود. تلاش با ابزار جایگزین..."
+              if ! extract_with_payload_dumper; then
+                echo "❌ استخراج با تمام ابزارها ناموفق بود. لطفاً به صورت دستی بررسی کنید."
+                exit 1
+              fi
+            fi
           fi
 
-          echo "✅ فایل‌های استخراج شده از payload.bin:"
-          ls -R ../../extracted_payload
+          echo "✅ فایل‌های استخراج شده:"
+          ls -R extracted_payload
 
       - name: آماده‌سازی فایل‌های منبع
         run: |
