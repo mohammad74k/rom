@@ -74,16 +74,41 @@ jobs:
     timeout-minutes: 480
 
     steps:
-      - name: دانلود کاستوم ROM
+      - name: دانلود و استخراج هوشمند ROM
         run: |
           mkdir -p custom_rom
           cd custom_rom
-          wget --progress=dot -O evolution_chopin-ota-tq3c.230901.001.b1-04040628-community-unsigned.zip "https://mirrors.ilolicon.com/ROM/evolution_chopin-ota-tq3c.230901.001.b1-04040628-community-unsigned/evolution_chopin-ota-tq3c.230901.001.b1-04040628-community-unsigned.zip"
-          ls -lh evolution_chopin-ota-tq3c.230901.001.b1-04040628-community-unsigned.zip
 
-      - name: استخراج فایل ZIP
-        run: |
-          unzip -q evolution_chopin-ota-tq3c.230901.001.b1-04040628-community-unsigned.zip -d custom_rom
+          # تعریف نام فایل و URL
+          ZIP_FILE="evolution_chopin-ota-tq3c.230901.001.b1-04040628-community-unsigned.zip"
+          ZIP_URL="https://mirrors.ilolicon.com/ROM/evolution_chopin-ota-tq3c.230901.001.b1-04040628-community-unsigned/evolution_chopin-ota-tq3c.230901.001.b1-04040628-community-unsigned.zip"
+
+          # بررسی وجود فایل ZIP
+          if [ ! -f "$ZIP_FILE" ]; then
+            echo "فایل ZIP یافت نشد. در حال دانلود..."
+            wget --progress=dot -O "$ZIP_FILE" "$ZIP_URL"
+          fi
+
+          # بررسی صحت فایل ZIP
+          echo "بررسی صحت فایل ZIP..."
+          if ! unzip -t "$ZIP_FILE"; then
+            echo "❌ فایل ZIP خراب است. در حال دانلود مجدد..."
+            rm -f "$ZIP_FILE"
+            wget --progress=dot -O "$ZIP_FILE" "$ZIP_URL"
+
+            # بررسی مجدد صحت فایل ZIP
+            if ! unzip -t "$ZIP_FILE"; then
+              echo "❌ فایل ZIP همچنان خراب است. لطفاً به صورت دستی بررسی کنید."
+              exit 1
+            fi
+          fi
+
+          # استخراج فایل ZIP
+          echo "استخراج فایل ZIP..."
+          unzip -q "$ZIP_FILE" -d .
+          echo "✅ فایل ZIP با موفقیت استخراج شد."
+          echo "فایل‌های استخراج شده:"
+          ls -R
 
       - name: استخراج payload.bin به‌صورت هوشمند
         run: |
