@@ -78,44 +78,43 @@ jobs:
         run: |
           mkdir -p custom_rom
           cd custom_rom
-          wget -O evolution_chopin-ota-tq3c.230901.001.b1-04040628-community-unsigned.zip "https://mirrors.ilolicon.com/ROM/evolution_chopin-ota-tq3c.230901.001.b1-04040628-community-unsigned/evolution_chopin-ota-tq3c.230901.001.b1-04040628-community-unsigned.zip"
-          ls -lh evolution_chopin-ota-tq3c.230901.001.b1-04040628-community-unsigned.zip  # بررسی سایز فایل دانلود شده و نام آن
-          unzip evolution_chopin-ota-tq3c.230901.001.b1-04040628-community-unsigned.zip || echo "Unzip failed"
-          echo "فایل‌های استخراج شده:"
-          ls -R
+          wget --progress=dot -O evolution_chopin-ota-tq3c.230901.001.b1-04040628-community-unsigned.zip "https://mirrors.ilolicon.com/ROM/evolution_chopin-ota-tq3c.230901.001.b1-04040628-community-unsigned/evolution_chopin-ota-tq3c.230901.001.b1-04040628-community-unsigned.zip"
+          ls -lh evolution_chopin-ota-tq3c.230901.001.b1-04040628-community-unsigned.zip
 
-      - name: بررسی محتویات فایل ZIP
+      - name: استخراج فایل ZIP
         run: |
-          unzip -l evolution_chopin-ota-tq3c.230901.001.b1-04040628-community-unsigned.zip
+          unzip -q evolution_chopin-ota-tq3c.230901.001.b1-04040628-community-unsigned.zip -d custom_rom
 
       - name: استخراج payload.bin به‌صورت هوشمند
         run: |
           mkdir -p extracted_payload
           cd custom_rom
-          
-          # استخراج فایل payload.bin از ZIP
-          echo "در حال جستجو برای فایل payload.bin ..."
           payload_file=$(find . -name "payload.bin" -print -quit)
-
-          # بررسی نتیجه جستجو
           if [ -z "$payload_file" ]; then
             echo "❌ payload.bin پیدا نشد!"
             exit 1
           else
             echo "✅ payload.bin پیدا شد: $payload_file"
-            # انجام عملیات با payload.bin
           fi
 
       - name: استخراج فایل‌های vendor و device tree
         run: |
           cd custom_rom
-          # استفاده از payload-dumper برای استخراج فایل‌ها
           git clone https://github.com/LineageOS/payload_dumper.git
           cd payload_dumper
           pip3 install -r requirements.txt
-          python3 payload_dumper.py "../$payload_file" ../../extracted_payload
+          python3 payload_dumper.py "../$payload_file" ../../extracted_payload > /dev/null 2>&1
           echo "فایل‌های استخراج شده از payload.bin:"
           ls -R ../../extracted_payload
+
+      - name: بررسی فایل‌های استخراج‌شده از payload.bin
+        run: |
+          if [ ! -f extracted_payload/vendor.img ] || [ ! -f extracted_payload/system.img ]; then
+            echo "❌ فایل‌های ضروری (vendor.img یا system.img) استخراج نشدند!"
+            exit 1
+          else
+            echo "✅ فایل‌های ضروری با موفقیت استخراج شدند."
+          fi
 
       - name: آماده‌سازی فایل‌های منبع
         run: |
@@ -127,19 +126,28 @@ jobs:
         run: |
           cd android_source
           repo init -u https://github.com/PixelOS-AOSP/platform_manifest.git -b pixel-14.0
-          repo sync -j$(nproc)
+          repo sync -q -j$(nproc)
 
       - name: کامپایل ریکاوری
         run: |
           cd android_source
           source build/envsetup.sh
           lunch aosp_chopin-userdebug
-          make recoveryimage -j$(nproc)
+          make recoveryimage -j$(nproc) > /dev/null 2>&1
 
       - name: کامپایل ROM
         run: |
           cd android_source
-          make -j$(nproc)
+          make -j$(nproc) > /dev/null 2>&1
+
+      - name: بررسی فایل‌های خروجی
+        run: |
+          if [ ! -f android_source/out/target/product/chopin/*.zip ] || [ ! -f android_source/out/target/product/chopin/recovery.img ]; then
+            echo "❌ فایل‌های خروجی (ROM یا recovery.img) ساخته نشدند!"
+            exit 1
+          else
+            echo "✅ فایل‌های خروجی با موفقیت ساخته شدند."
+          fi
 
       - name: آپلود آرتیفکت
         uses: actions/upload-artifact@v4
@@ -148,3 +156,7 @@ jobs:
           path: |
             android_source/out/target/product/chopin/*.zip
             android_source/out/target/product/chopin/recovery.img
+
+      - name: پاکسازی فایل‌های موقت
+        run: |
+          rm -rf custom_rom extracted_payload
