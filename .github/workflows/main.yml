@@ -84,6 +84,10 @@ jobs:
           echo "فایل‌های استخراج شده:"
           ls -R
 
+      - name: بررسی محتویات فایل ZIP
+        run: |
+          unzip -l evolution_chopin-ota-tq3c.230901.001.b1-11050702-community-unsigned.zip
+
       - name: استخراج payload.bin
         run: |
           mkdir -p extracted_payload
