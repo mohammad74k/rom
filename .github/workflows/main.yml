@@ -78,30 +78,27 @@ jobs:
         run: |
           mkdir -p custom_rom
           cd custom_rom
+          
+          # دانلود فایل با نام صحیح
           wget -O evolution_chopin-ota-tq3c.230901.001.b1-04040628-community-unsigned.zip "https://mirrors.ilolicon.com/ROM/evolution_chopin-ota-tq3c.230901.001.b1-04040628-community-unsigned/evolution_chopin-ota-tq3c.230901.001.b1-04040628-community-unsigned.zip"
           
-          # بررسی وضعیت فایل دانلود شده
+          # بررسی فایل دانلود شده
           ls -lh evolution_chopin-ota-tq3c.230901.001.b1-04040628-community-unsigned.zip
-          file evolution_chopin-ota-tq3c.230901.001.b1-04040628-community-unsigned.zip
-          
-          # در صورتی که فایل دانلود نشد، ارور می‌دهیم
-          if [ ! -f evolution_chopin-ota-tq3c.230901.001.b1-04040628-community-unsigned.zip ]; then
+
+          # اگر فایل با پسوند اضافی (.zip.zip) دانلود شده باشد، آن را اصلاح می‌کنیم
+          if [[ -f "evolution_chopin-ota-tq3c.230901.001.b1-04040628-community-unsigned.zip.zip" ]]; then
+            mv evolution_chopin-ota-tq3c.230901.001.b1-04040628-community-unsigned.zip.zip evolution_chopin-ota-tq3c.230901.001.b1-04040628-community-unsigned.zip
+            echo "پسوند اضافی .zip.zip حذف شد!"
+          fi
+
+          # بررسی وجود فایل و محتویات آن
+          if [ ! -f "evolution_chopin-ota-tq3c.230901.001.b1-04040628-community-unsigned.zip" ]; then
             echo "❌ فایل دانلود نشده است!"
             exit 1
           fi
-          
-          # در صورتی که فایل دانلود شده پسوند اضافی دارد (مثل .zip.zip)، آن را اصلاح می‌کنیم
-          if [[ -f "evolution_chopin-ota-tq3c.230901.001.b1-04040628-community-unsigned.zip.zip" ]]; then
-            mv evolution_chopin-ota-tq3c.230901.001.b1-04040628-community-unsigned.zip.zip evolution_chopin-ota-tq3c.230901.001.b1-04040628-community-unsigned.zip
-          fi
 
-          # بررسی وجود فایل ZIP
-          echo "محتویات دایرکتوری بعد از دانلود:"
-          ls -l
-
-      - name: بررسی محتویات فایل ZIP
-        run: |
-          echo "بررسی محتویات فایل ZIP"
+          # نمایش محتویات فایل ZIP
+          echo "محتویات فایل ZIP"
           unzip -l evolution_chopin-ota-tq3c.230901.001.b1-04040628-community-unsigned.zip
 
       - name: استخراج payload.bin
