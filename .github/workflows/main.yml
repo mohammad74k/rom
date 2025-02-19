@@ -79,7 +79,18 @@ jobs:
           mkdir -p custom_rom
           cd custom_rom
           wget -O evolution_chopin-ota-tq3c.230901.001.b1-11050702-community-unsigned.zip "https://file.alindas.de/d/%5BOneDrive%5D%20Admin/ROM/evolution_chopin-ota-tq3c.230901.001.b1-11050702-community-unsigned/evolution_chopin-ota-tq3c.230901.001.b1-11050702-community-unsigned.zip"
-          ls -lh evolution_chopin-ota-tq3c.230901.001.b1-11050702-community-unsigned.zip  # بررسی سایز فایل دانلود شده و نام آن
+          
+          # بررسی وضعیت فایل دانلود شده
+          ls -lh evolution_chopin-ota-tq3c.230901.001.b1-11050702-community-unsigned.zip
+          file evolution_chopin-ota-tq3c.230901.001.b1-11050702-community-unsigned.zip
+          
+          # در صورتی که فایل دانلود نشد، ارور می‌دهیم
+          if [ ! -f evolution_chopin-ota-tq3c.230901.001.b1-11050702-community-unsigned.zip ]; then
+            echo "❌ فایل دانلود نشده است!"
+            exit 1
+          fi
+          
+          # استخراج فایل ZIP
           unzip evolution_chopin-ota-tq3c.230901.001.b1-11050702-community-unsigned.zip || echo "Unzip failed"
           echo "فایل‌های استخراج شده:"
           ls -R
@@ -94,10 +105,13 @@ jobs:
           cd custom_rom
           # استخراج payload.bin از فایل ZIP
           payload_file=$(find . -name "payload.bin" -print -quit)
+          
+          # بررسی وجود payload.bin
           if [ -z "$payload_file" ]; then
             echo "❌ payload.bin پیدا نشد!"
             exit 1
           fi
+          
           echo "✅ payload.bin پیدا شد: $payload_file"
 
       - name: استخراج فایل‌های vendor و device tree
