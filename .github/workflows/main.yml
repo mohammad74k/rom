@@ -78,38 +78,43 @@ jobs:
         run: |
           mkdir -p custom_rom
           cd custom_rom
-          wget -O evolution_chopin.zip "https://mirrors.ilolicon.com/ROM/evolution_chopin-ota-tq3c.230901.001.b1-04040628-community-unsigned/evolution_chopin-ota-tq3c.230901.001.b1-04040628-community-unsigned.zip"
+          wget -O evolution_chopin.zip "https://file.alindas.de/d/%5BOneDrive%5D%20Admin/ROM/evolution_chopin-ota-tq3c.230901.001.b1-11050702-community-unsigned/evolution_chopin-ota-tq3c.230901.001.b1-11050702-community-unsigned.zip"
           unzip evolution_chopin.zip
           echo "فایل‌های استخراج شده:"
           ls -R
 
-      - name: استخراج payload.bin
+      - name: استخراج payload.bin با استفاده از Payload Dumper
         run: |
-          mkdir -p extracted_payload
+          # کلون کردن مخزن LineageOS Payload Dumper
+          git clone https://github.com/LineageOS/payload_dumper.git
+          cd payload_dumper
+          
+          # استخراج payload.bin از فایل zip
+          python3 extract.py ../custom_rom/evolution_chopin.zip ../custom_rom/extracted_files
+          echo "فایل‌های استخراج شده:"
+          ls -R ../custom_rom/extracted_files
+
+      - name: استخراج فریمور (firmware)
+        run: |
           cd custom_rom
-          # استخراج payload.bin از فایل ZIP
-          payload_file=$(find . -name "payload.bin" -print -quit)
-          if [ -z "$payload_file" ]; then
-            echo "❌ payload.bin پیدا نشد!"
-            exit 1
+          mkdir -p firmware
+          
+          # اگر فایل‌های فریمور به صورت جداگانه از payload.bin استخراج نمی‌شوند، می‌توانیم این کار را از طریق ابزارهای دیگر انجام دهیم
+          # اما در اینجا فرض می‌کنیم فایل‌هایی که باید استخراج شوند در پوشه‌ای به نام firmware هستند
+          if [ -f extracted_files/firmware.img ]; then
+            cp extracted_files/firmware.img firmware/
           fi
-          echo "✅ payload.bin پیدا شد: $payload_file"
+          
+          echo "فریمور استخراج شده:"
+          ls -R firmware
 
       - name: استخراج فایل‌های vendor و device tree
         run: |
           cd custom_rom
-          # استفاده از payload-dumper برای استخراج فایل‌ها
-          git clone https://github.com/PixelExperience/payload_dumper.git
-          cd payload_dumper
-          python3 extract.py ../payload.bin ../extracted_files
-          echo "فایل‌های استخراج شده از payload.bin:"
-          ls -R ../extracted_files
-          
-      - name: آماده‌سازی فایل‌های منبع
-        run: |
+          # انتقال فایل‌های استخراج‌شده به دایرکتوری منابع پروژه
           mkdir -p android_source/device/xiaomi/chopin/vendor
-          cp -r custom_rom/extracted_files/vendor/* android_source/device/xiaomi/chopin/vendor/
-          cp -r custom_rom/extracted_files/device/* android_source/device/xiaomi/chopin/
+          cp -r extracted_files/vendor/* android_source/device/xiaomi/chopin/vendor/
+          cp -r extracted_files/device/* android_source/device/xiaomi/chopin/
           
       - name: دانلود سورس اندروید
         run: |
@@ -136,3 +141,4 @@ jobs:
           path: |
             android_source/out/target/product/chopin/*.zip
             android_source/out/target/product/chopin/recovery.img
+            firmware/firmware.img
