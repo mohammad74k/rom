@@ -114,57 +114,39 @@ jobs:
           unzip -q "$ZIP_FILE" -d .
           echo "✅ فایل ZIP با موفقیت استخراج شد."
 
+      - name: نصب liblzma-dev
+        run: |
+          sudo apt update
+          sudo apt install -y liblzma-dev
+
+      - name: نصب payload-dumper-go
+        run: |
+          if ! command -v payload-dumper-go &>/dev/null; then
+            echo "❌ payload-dumper-go یافت نشد. در حال نصب..."
+            sudo apt install -y liblzma-dev
+            git clone https://github.com/ssut/payload-dumper-go.git
+            cd payload-dumper-go
+            go build -o payload-dumper-go
+            sudo mv payload-dumper-go /usr/local/bin/
+            cd ..
+          fi
+
       - name: استخراج فایل‌های vendor و device tree
         run: |
           cd custom_rom
-          # تابع پیشرفته برای بررسی اتصال
-          check_connection() {
-            echo "بررسی اتصال به اینترنت..."
-            for i in {1..3}; do
-              if curl -sI https://github.com >/dev/null; then
-                echo "✅ اتصال به اینترنت برقرار است."
-                return 0
-              else
-                echo "❌ تلاش $i ناموفق. تلاش مجدد در 10 ثانیه..."
-                sleep 10
-              fi
-            done
-            echo "❌ اتصال به اینترنت برقرار نشد!"
+          payload_file=$(find . -name "payload.bin" -print -quit)
+          if [ -z "$payload_file" ]; then
+            echo "❌ فایل payload.bin یافت نشد!"
             exit 1
-          }
-
-          # تابع استخراج با payload-dumper-go
-          extract_with_payload_dumper_go() {
-            echo "======================\nاستفاده از payload-dumper-go\n======================"
-            if ! command -v payload-dumper-go &>/dev/null; then
-              echo "❌ payload-dumper-go یافت نشد. در حال نصب..."
-              sudo apt install -y liblzma-dev
-              git clone https://github.com/ssut/payload-dumper-go.git
-              cd payload-dumper-go
-              go build -o payload-dumper-go
-              sudo mv payload-dumper-go /usr/local/bin/
-              cd ..
-            fi
-            payload_file=$(find . -name "payload.bin" -print -quit)
-            if [ -z "$payload_file" ]; then
-              echo "❌ فایل payload.bin یافت نشد!"
-              return 1
-            fi
-            mkdir -p extracted_payload
-            if payload-dumper-go -o extracted_payload "$payload_file"; then
-              echo "✅ استخراج با موفقیت انجام شد!"
-              return 0
-            else
-              echo "❌ استخراج با payload-dumper-go ناموفق بود!"
-              return 1
-            fi
-          }
-
-          # اجرای اصلی
-          check_connection
-          if ! extract_with_payload_dumper_go; then
-            echo "❌ خطای بحرانی: امکان استخراج فایل‌ها وجود ندارد!"
-            exit 1
+          fi
+          mkdir -p extracted_payload
+          if payload-dumper-go -o extracted_payload "$payload_file"; then
+            echo "✅ استخراج با موفقیت انجام شد!"
+          else
+            echo "❌ استخراج با payload-dumper-go ناموفق بود! در حال استفاده از payload_dumper.py..."
+            wget https://github.com/cyxx/extract_android_ota_payload/raw/master/payload_dumper.py
+            pip3 install protobuf bsdiff4
+            python3 payload_dumper.py "$payload_file" -o extracted_payload
           fi
           echo "✅ فایل‌های استخراج شده:"
           ls -lh extracted_payload
