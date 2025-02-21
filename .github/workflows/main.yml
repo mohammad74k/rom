@@ -202,8 +202,8 @@ jobs:
           # اجرای repo init
           repo init -u https://github.com/PixelOS-AOSP/manifest.git -b fourteen --git-lfs
           
-          # همگام‌سازی مخزن
-          repo sync -q -j$(nproc) --no-clone-bundle --force-sync --depth=1
+          # همگام‌سازی مخزن (بدون --depth)
+          repo sync -q -j$(nproc) --no-clone-bundle --force-sync
 
       - name: کامپایل ریکاوری
         run: |
