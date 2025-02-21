@@ -1,4 +1,4 @@
-name: Build ROM
+name: Build PixelOS ROM
 
 on:
   push:
@@ -54,7 +54,7 @@ jobs:
               openjdk-17-jdk repo git-core gnupg flex bison gperf build-essential \
               zlib1g-dev libc6-dev libncurses5-dev x11proto-core-dev libx11-dev \
               libgl1-mesa-dev libxml2-utils xsltproc unzip python3 python3-pip \
-              android-sdk-libsparse-utils wget ccache lz4
+              android-sdk-libsparse-utils wget ccache lz4 golang curl
 
       - name: نصب mkbootimg
         run: |
@@ -66,7 +66,7 @@ jobs:
 
       - name: نصب ابزارهای جانبی
         run: |
-          sudo apt install -y f2fs-tools squashfs-tools
+          sudo apt install -y f2fs-tools squashfs-tools liblzma-dev
 
   build:
     runs-on: ubuntu-latest
@@ -74,226 +74,186 @@ jobs:
     timeout-minutes: 480
 
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: پاکسازی فایل‌های موقت
+        run: |
+          sudo apt clean
+          sudo rm -rf /var/lib/apt/lists/*
+          sudo rm -rf /tmp/*
+
       - name: دانلود و استخراج هوشمند ROM
         run: |
           mkdir -p custom_rom
           cd custom_rom
-
           # تعریف نام فایل و URL
           ZIP_FILE="evolution_chopin-ota-tq3c.230901.001.b1-04040628-community-unsigned.zip"
           ZIP_URL="https://mirrors.ilolicon.com/ROM/evolution_chopin-ota-tq3c.230901.001.b1-04040628-community-unsigned/evolution_chopin-ota-tq3c.230901.001.b1-04040628-community-unsigned.zip"
-
+          
           # بررسی وجود فایل ZIP
           if [ ! -f "$ZIP_FILE" ]; then
             echo "فایل ZIP یافت نشد. در حال دانلود..."
             wget --progress=dot -O "$ZIP_FILE" "$ZIP_URL"
           fi
-
+          
           # بررسی صحت فایل ZIP
           echo "بررسی صحت فایل ZIP..."
           if ! unzip -t "$ZIP_FILE"; then
             echo "❌ فایل ZIP خراب است. در حال دانلود مجدد..."
             rm -f "$ZIP_FILE"
             wget --progress=dot -O "$ZIP_FILE" "$ZIP_URL"
-
-            # بررسی مجدد صحت فایل ZIP
             if ! unzip -t "$ZIP_FILE"; then
               echo "❌ فایل ZIP همچنان خراب است. لطفاً به صورت دستی بررسی کنید."
               exit 1
             fi
           fi
-
+          
           # استخراج فایل ZIP
           echo "استخراج فایل ZIP..."
           unzip -q "$ZIP_FILE" -d .
           echo "✅ فایل ZIP با موفقیت استخراج شد."
-          echo "فایل‌های استخراج شده:"
-          ls -R
 
       - name: استخراج فایل‌های vendor و device tree
         run: |
           cd custom_rom
-
-          # تابع برای بررسی اتصال به اینترنت
-          check_internet() {
-            if ! ping -c 1 github.com; then
-              echo "❌ اتصال به اینترنت برقرار نشد. لطفاً شبکه را بررسی کنید."
-              exit 1
-            fi
-          }
-
-          # تابع برای کلون کردن مخزن
-          clone_repo() {
-            local repo_url=$1
-            local repo_name=$2
-            echo "تلاش برای کلون کردن مخزن $repo_name..."
+          # تابع پیشرفته برای بررسی اتصال
+          check_connection() {
+            echo "بررسی اتصال به اینترنت..."
             for i in {1..3}; do
-              if git clone "$repo_url"; then
-                echo "✅ مخزن $repo_name با موفقیت کلون شد."
+              if curl -sI https://github.com >/dev/null; then
+                echo "✅ اتصال به اینترنت برقرار است."
                 return 0
               else
-                echo "❌ تلاش $i برای کلون کردن مخزن $repo_name با خطا مواجه شد. تلاش مجدد در 10 ثانیه..."
+                echo "❌ تلاش $i ناموفق. تلاش مجدد در 10 ثانیه..."
                 sleep 10
               fi
             done
-            echo "❌ کلون کردن مخزن $repo_name پس از 3 تلاش ناموفق بود."
-            return 1
+            echo "❌ اتصال به اینترنت برقرار نشد!"
+            exit 1
           }
 
-          # تابع برای استخراج با update_payload
-          extract_with_update_payload() {
-            echo "استفاده از update_payload برای استخراج..."
-            if ! command -v update_payload &> /dev/null; then
-              echo "❌ update_payload یافت نشد. در حال نصب..."
-              if ! clone_repo "https://github.com/anestisb/android-tools.git" "android-tools"; then
-                return 1
-              fi
-              cd android-tools
-              mkdir build
-              cd build
-              cmake ..
-              make -j$(nproc)
-              sudo make install
-              cd ../..
-            fi
-
-            payload_file=$(find . -name "payload.bin" -print -quit)
-            if [ -z "$payload_file" ]; then
-              echo "❌ payload.bin پیدا نشد!"
-              return 1
-            else
-              echo "✅ payload.bin پیدا شد: $payload_file"
-              mkdir -p extracted_payload
-              if update_payload extract "$payload_file" --output_dir extracted_payload; then
-                echo "✅ فایل‌ها با موفقیت با update_payload استخراج شدند."
-                return 0
-              else
-                echo "❌ استخراج با update_payload با خطا مواجه شد."
-                return 1
-              fi
-            fi
-          }
-
-          # تابع برای استخراج با payload-dumper-go
+          # تابع استخراج با payload-dumper-go
           extract_with_payload_dumper_go() {
-            echo "استفاده از payload-dumper-go برای استخراج..."
-            if ! command -v payload-dumper-go &> /dev/null; then
+            echo "======================\nاستفاده از payload-dumper-go\n======================"
+            if ! command -v payload-dumper-go &>/dev/null; then
               echo "❌ payload-dumper-go یافت نشد. در حال نصب..."
-              if ! clone_repo "https://github.com/ssut/payload-dumper-go.git" "payload-dumper-go"; then
-                return 1
-              fi
+              sudo apt install -y liblzma-dev
+              git clone https://github.com/ssut/payload-dumper-go.git
               cd payload-dumper-go
               go build -o payload-dumper-go
               sudo mv payload-dumper-go /usr/local/bin/
               cd ..
             fi
-
             payload_file=$(find . -name "payload.bin" -print -quit)
             if [ -z "$payload_file" ]; then
-              echo "❌ payload.bin پیدا نشد!"
+              echo "❌ فایل payload.bin یافت نشد!"
               return 1
+            fi
+            mkdir -p extracted_payload
+            if payload-dumper-go -o extracted_payload "$payload_file"; then
+              echo "✅ استخراج با موفقیت انجام شد!"
+              return 0
             else
-              echo "✅ payload.bin پیدا شد: $payload_file"
-              mkdir -p extracted_payload
-              if payload-dumper-go -o extracted_payload "$payload_file"; then
-                echo "✅ فایل‌ها با موفقیت با payload-dumper-go استخراج شدند."
-                return 0
-              else
-                echo "❌ استخراج با payload-dumper-go با خطا مواجه شد."
-                return 1
-              fi
+              echo "❌ استخراج با payload-dumper-go ناموفق بود!"
+              return 1
             fi
           }
 
-          # تابع برای استخراج با payload-dumper
-          extract_with_payload_dumper() {
-            echo "استفاده از payload-dumper برای استخراج..."
-            if ! command -v payload-dumper &> /dev/null; then
-              echo "❌ payload-dumper یافت نشد. در حال نصب..."
-              if ! clone_repo "https://github.com/LineageOS/payload_dumper.git" "payload_dumper"; then
-                return 1
-              fi
-              cd payload_dumper
-              pip3 install -r requirements.txt
-              cd ..
-            fi
-
-            payload_file=$(find . -name "payload.bin" -print -quit)
-            if [ -z "$payload_file" ]; then
-              echo "❌ payload.bin پیدا نشد!"
-              return 1
-            else
-              echo "✅ payload.bin پیدا شد: $payload_file"
-              mkdir -p extracted_payload
-              if python3 -m payload_dumper "$payload_file" -o extracted_payload; then
-                echo "✅ فایل‌ها با موفقیت با payload-dumper استخراج شدند."
-                return 0
-              else
-                echo "❌ استخراج با payload-dumper با خطا مواجه شد."
-                return 1
-              fi
-            fi
-          }
-
-          # بررسی اتصال به اینترنت
-          check_internet
-
-          # تلاش برای استخراج با ابزارهای مختلف
-          if ! extract_with_update_payload; then
-            echo "❌ استخراج با update_payload ناموفق بود. تلاش با ابزار جایگزین..."
-            if ! extract_with_payload_dumper_go; then
-              echo "❌ استخراج با payload-dumper-go ناموفق بود. تلاش با ابزار جایگزین..."
-              if ! extract_with_payload_dumper; then
-                echo "❌ استخراج با تمام ابزارها ناموفق بود. لطفاً به صورت دستی بررسی کنید."
-                exit 1
-              fi
-            fi
+          # اجرای اصلی
+          check_connection
+          if ! extract_with_payload_dumper_go; then
+            echo "❌ خطای بحرانی: امکان استخراج فایل‌ها وجود ندارد!"
+            exit 1
           fi
-
           echo "✅ فایل‌های استخراج شده:"
-          ls -R extracted_payload
+          ls -lh extracted_payload
 
-      - name: آماده‌سازی فایل‌های منبع
+      - name: کپی فایل‌های vendor به مسیر صحیح
         run: |
           mkdir -p android_source/device/xiaomi/chopin/vendor
-          cp -r extracted_payload/vendor/* android_source/device/xiaomi/chopin/vendor/
-          cp -r extracted_payload/device/* android_source/device/xiaomi/chopin/
+          if [ -f "custom_rom/extracted_payload/vendor.img" ]; then
+              cp custom_rom/extracted_payload/vendor.img android_source/device/xiaomi/chopin/vendor/
+          else
+              echo "❌ فایل vendor.img در مسیر مورد نظر وجود ندارد!"
+              exit 1
+          fi
 
-      - name: دانلود سورس اندروید
+      - name: تنظیم کلید SSH
         run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan github.com >> ~/.ssh/known_hosts
+
+      - name: تست دسترسی SSH
+        id: ssh_test
+        run: |
+          if ssh -T git@github.com; then
+            echo "SSH connection successful."
+            echo "USE_SSH=true" >> $GITHUB_ENV
+          else
+            echo "SSH connection failed. Falling back to HTTPS with tokens."
+            echo "USE_SSH=false" >> $GITHUB_ENV
+          fi
+
+      - name: تنظیم توکن GitHub (در صورت شکست SSH)
+        if: env.USE_SSH == 'false'
+        run: |
+          git config --global url."https://${{ secrets.GITHUB_TOKEN_CLASSIC }}:@github.com/".insteadOf "https://github.com/"
+
+      - name: نصب و استفاده از ابزار repo
+        run: |
+          mkdir -p ~/bin
+          curl https://storage.googleapis.com/git-repo-downloads/repo > ~/bin/repo
+          chmod a+x ~/bin/repo
+          export PATH="$HOME/bin:$PATH"
+          
+          # تنظیم هویت Git (ضروری برای repo sync)
+          git config --global user.name "GitHub Actions"
+          git config --global user.email "actions@github.com"
+          
+          # ایجاد دایرکتوری android_source
+          mkdir -p android_source
           cd android_source
-          repo init -u https://github.com/PixelOS-AOSP/platform_manifest.git -b pixel-14.0
-          repo sync -q -j$(nproc)
+          
+          # اجرای repo init
+          repo init -u https://github.com/PixelOS-AOSP/manifest.git -b fourteen --git-lfs
+          
+          # همگام‌سازی مخزن
+          repo sync -q -j$(nproc) --no-clone-bundle --force-sync --depth=1
 
       - name: کامپایل ریکاوری
         run: |
           cd android_source
           source build/envsetup.sh
           lunch aosp_chopin-userdebug
-          make recoveryimage -j$(nproc) > /dev/null 2>&1
+          make recoveryimage -j$(nproc) >/dev/null 2>&1
 
       - name: کامپایل ROM
         run: |
           cd android_source
-          make -j$(nproc) > /dev/null 2>&1
+          make -j$(nproc) >/dev/null 2>&1
 
-      - name: بررسی فایل‌های خروجی
+      - name: بررسی نهایی
         run: |
-          if [ ! -f android_source/out/target/product/chopin/*.zip ] || [ ! -f android_source/out/target/product/chopin/recovery.img ]; then
-            echo "❌ فایل‌های خروجی (ROM یا recovery.img) ساخته نشدند!"
+          if [ ! -f android_source/out/target/product/chopin/*.zip ] || \
+             [ ! -f android_source/out/target/product/chopin/recovery.img ]; then
+            echo "❌ خطا در تولید خروجی!"
             exit 1
-          else
-            echo "✅ فایل‌های خروجی با موفقیت ساخته شدند."
           fi
+          echo "✅ ساخت ROM با موفقیت انجام شد!"
 
-      - name: آپلود آرتیفکت
+      - name: آپلود نتایج
         uses: actions/upload-artifact@v4
         with:
-          name: Custom-ROM
+          name: ROM-Artifacts
           path: |
             android_source/out/target/product/chopin/*.zip
             android_source/out/target/product/chopin/recovery.img
 
-      - name: پاکسازی فایل‌های موقت
+      - name: پاکسازی
         run: |
           rm -rf custom_rom extracted_payload
+          sudo swapoff -a
+          sudo rm -f /swapfile
